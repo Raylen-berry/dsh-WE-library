@@ -1,0 +1,117 @@
+# 画面接口（Frame Interface）设计 — v0.1
+
+> 本文件是 **dsh-WE-library 与 dsh-bg-atelier-plus 之间的契约**。
+> 两边各自演进时以本文件为准；改接口先改这里。
+
+## 为什么需要它
+
+按职责划分：
+
+| 插件 | 负责 |
+|---|---|
+| `dsh-WE-library` | WE 库里有什么、场景怎么渲染、**画面从哪来** |
+| `dsh-bg-atelier-plus` | **把画面当背景贴上去**（底图绘制 / 主题染色 / 外观控件） |
+
+移植前的实测结论（决定了接口形状）：
+
+1. **实时画面不是一条 HTTP 流。** 原生桥 `dshWallpaper.start(id, token)` 只做两件事：
+   让 WE 在专用窗口里跑场景、并把该窗口**对齐**到 DSH 客户区；
+   真正的视频流由 **renderer 自己** 调 `navigator.mediaDevices.getDisplayMedia()` 拿到
+   （`client.js:2349`），是一个**页面内的 `MediaStream`**，从不经过 HTTP。
+2. **`window.dshWallpaper` 只在 Electron renderer 里有**（preload 注入）。
+   纯网页/浏览器下实时模式本就不可用，只能走静态。
+3. **静态画面本来就已经是 HTTP 的**：`/dwl/still/<id>.webp` 由 host 解 `scene.pkg` 合成。
+4. **实时画面与底图绘制状态耦合**：WE 壁纸激活时底图插件的「换一张/上一张」要变 disabled
+   （`client.js:2200/2255-2260`）。
+
+所以接口分两层：**静态层走 HTTP（已存在，改名即可）**，**实时层是一个"控制面 + 渲染器内流"的契约**，
+而不是硬把 `MediaStream` 塞进 HTTP（那需要 MSE/WebRTC，复杂度与收益不成比例）。
+
+---
+
+## 第一层：静态画面（HTTP，已落地）
+
+由 WE 库桥提供，底图插件只消费 URL 字符串。
+
+| 端点 | 语义 |
+|---|---|
+| `GET /dwl/library.json` | 库清单。每项含 `id`/`title`/`type`/`tags`/`previewRel`，以及（scene 且已合成时）`stillReady: true`、`still: "/dwl/still/<id>.webp"` |
+| `GET /dwl/still/<id>.webp` | 该场景的静态合成图（webp）。**这就是"画面"在静态模式下的全部** |
+| `POST /dwl/still?id=<id>` | 请求开始合成（异步，202/200 带状态） |
+| `GET /dwl/media/<id>/<相对路径>` | 项目内媒体（视频/网页/预览图）。扩展名黑名单，路径穿越被拒 |
+
+**底图插件要做的**：把原来是 `/bga/we/...` 的 URL 前缀换成 `/dwl/...`（或从库里读回 `still` 字段，
+不自己拼 URL —— **推荐后者**，URL 形状的变更就只影响桥这一侧）。
+
+> 约定：**消费方不要自己拼 still URL**，一律用 `library.json` 返回的 `still` 字段。
+> 这样以后换前缀/换存储形态，底图插件不用改。
+
+---
+
+## 第二层：实时画面（控制面 + 渲染器内流）
+
+### 契约
+
+实时画面**不可能**由 host 通过 HTTP 交付（见上）。所以契约是：
+**WE 库桥负责"让 WE 在专用窗口里跑起来并对齐"，消费方负责"把那个窗口的画面抓进自己的页面"。**
+
+| 阶段 | 谁做 | 具体 |
+|---|---|---|
+| 1. 能力探测 | 消费方 | `window.dshWallpaper.capability()` → `{ version, available, mouse }`。**不存在 ⇒ 没有实时能力**（纯网页/没装桥），直接走静态 |
+| 2. 启动 | 消费方调，桥侧执行 | `window.dshWallpaper.start(id, token)`。`id` 必须匹配 `/^(?:\d+|local-[a-f0-9]{24})$/`，`token` 必须匹配 `/^[a-zA-Z0-9-]{8,80}$/`。桥把 WE 专用窗口对齐到 DSH 客户区，**返回后窗口已就位可采集** |
+| 3. 采集 | **消费方** | `navigator.mediaDevices.getDisplayMedia({ video: { frameRate: {ideal,max} , cursor:'never' }, audio:false })` → 得到页面内 `MediaStream` |
+| 4. 呈现 | 消费方 | 把 `MediaStream` 挂到自己创建的 `<video>`（`muted autoplay playsInline`），`object-fit:fill`，`pointer-events:none` |
+| 5. 属性 | 消费方 → 桥 | `window.dshWallpaper.properties(id, 'read'|'apply', values, name)` 读写场景属性 |
+| 6. 可见性 | 桥 → 消费方 | `window.dshWallpaper.onVisibility(cb)`；隐藏时**必须**停掉采集、`stop(token)`，恢复时重来 |
+| 7. 停止 | 消费方 | 先停 `stream.getTracks().forEach(t=>t.stop())`、移除 `<video>`，再 `stop(token)` |
+
+### 硬约束（历史踩过的坑，别踩回去）
+
+- **不要强制缩放采集画面**：Windows 下窗口采集被要求缩放时会严重卡顿
+  （底图插件 v1.9.0 实测：本机同场景缩放会掉到 11–13 fps）。**保留原尺寸，只调帧率**。
+  鼠标对齐由桥负责，缩放会破坏它。
+- **不要让视频层吃输入**：`pointer-events:none`。WE 自己读真实光标，转发鼠标消息无效
+  （`we/native/README.md` 有实测记录）。
+- **单进程最多一个实时背景**：桥侧 `current` 是单例，`start` 会用 `serial` 串行化。消费方要保证
+  同一时刻只有一个 `token` 活着，切换时先 `stop` 旧的。
+- **超时与降级**：底图插件用 25s 超时后回落静态预览并提示原因。这是**消费方的责任**，
+  桥只负责如实报错（`{error}`），不替消费方决定降级策略。
+- **隐藏/最小化必须释放**：否则 WE 场景一直在跑，白烧 GPU。
+
+### 这一层"移交"的真实含义
+
+移植后会发生什么变化：
+
+| 项 | 现在（都在底图插件） | 移植后 |
+|---|---|---|
+| `window.dshWallpaper.*` 调用 | 底图插件 client.js | **仍然是消费方调**（因为采集必须在消费方页面里做） |
+| 原生桥代码 / IPC 频道 | 底图插件 `we/native` | **移到 WE 库桥**（频道 `dwl-live:*`） |
+| 桥的安装器 | 底图插件 `tools/install-native-bridge.mjs` | **移到 WE 库桥** |
+| 场景属性 UI | 底图插件 | **移到 WE 库桥**（它读写 `we-scene-properties.json`，属桥的数据） |
+| 库浏览 UI | 底图插件设置页 | **移到 WE 库桥**（它消费 `/dwl/library.json`） |
+| "把画面当背景" | 底图插件 | **留在底图插件**（本职） |
+
+**所以第二层不是"搬走一个流"，而是"搬走桥 + 数据 + UI，保留采集动作在消费方"**。
+这是刻意的：采集必须在渲染画面那一侧，硬搬会让两边都要拿 `MediaStream`，反而更耦合。
+
+---
+
+## 版本与兼容
+
+- 桥侧 `capability()` 返回 `version: 2`（现已如此）。消费方**按 version 分支**，不按插件版本猜测。
+- 静态层是纯 URL，无版本概念；但**用 `library.json` 的 `still` 字段**这一条要当契约守。
+- 两个插件**可各自独立安装**：
+  - 只装 WE 库桥：能拿到库清单与静态图，但没人贴背景（除非别的背景插件消费它）。
+  - 只装底图插件：原有 WE 功能继续可用（过渡期双份并存），不受影响。
+
+## 过渡期策略（当前）
+
+**双份并存**，刻意的：
+
+- WE 库桥（新插件）已完整承接 **host 半**：库、媒体、静态合成、启动、桥。
+- 底图插件里原有的 WE 全套（含 `/bga/we/*` 路由、`bga-live:*` 频道、UI）**保持不动**。
+- 两边**不抢路由**（`/dwl` vs `/bga/we`）、**不抢 IPC 频道**（`dwl-live:*` vs `bga-live:*`）。
+- 所以**当前状态安全可运行**：不装新插件完全不影响现有使用；装了也不会互相干扰。
+
+拆客户端半（库浏览 UI、场景属性面板、实时消费改指向新桥）是下一步，**必须两头同时改**，
+切换后底图插件里的旧 WE 才做减法。

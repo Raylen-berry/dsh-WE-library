@@ -18,6 +18,9 @@ const SUITES = [
   'tools/verify-we-library.mjs',
   // 真跑一次库发现并与磁盘对账；本机没有 WE 时自己 SKIP 并退出 0，不污染 CI。
   'tools/verify-discovery-live.mjs',
+  // 实机检验：真跑 apply()、真起 HTTP 服务、真发请求（含前缀隔离与路径穿越边界）。
+  // 需要本机装了插件（link 到 profile）；没装时自己 SKIP。
+  'tools/verify-live-host.mjs',
 ]
 
 const EXCLUDED = [

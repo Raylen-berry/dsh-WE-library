@@ -1,0 +1,53 @@
+{
+  "name": "dsh-we-library",
+  "version": "0.1.0",
+  "description": "WE 库桥：发现本机 Wallpaper Engine 安装与壁纸库（订阅/本地项目），提供库清单、媒体流、场景静态合成与实时场景控制面。从 dsh-bg-atelier-plus 移植出来独立维护，与底图插件（负责把画面当背景贴上去）分立，两边靠 HTTP 接口解耦。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "wallpaper-engine",
+    "we-library",
+    "scene"
+  ],
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node tools/run-all.mjs",
+    "native:build": "node tools/build-native.mjs",
+    "native:install": "node tools/install-native-bridge.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "index.js",
+    "we",
+    "tools",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.2-alpha.1 <0.3.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Raylen-berry/dsh-WE-library.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Raylen-berry/dsh-WE-library/issues"
+  },
+  "homepage": "https://github.com/Raylen-berry/dsh-WE-library#readme",
+  "license": "MIT"
+}

@@ -1,0 +1,7 @@
+node_modules/
+*.log
+# 派生图与临时目录：本机产物，不进库
+we-stills/
+.tmp-stills/
+.DS_Store
+Thumbs.db

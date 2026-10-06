@@ -1,0 +1,16 @@
+# ============================================================================
+# dsh-WE-library — DSH bundle patch
+# ============================================================================
+# Host row: mounted into the profile composition on boot, like dsh-bg-atelier.
+# 行 id 与 name 必须跟着 package.json 走：包名是小写 dsh-we-library（npm 不允许
+# 大写字母），但仓库/目录名是 dsh-WE-library。名字不一致时宿主会报
+#   we-library (dsh-we-library): failed to import
+# 而根本挂不上 —— 底图插件改名那次踩过同一个坑。
+#
+# 安装（DSH 关闭时在终端执行）：
+#   dsh plugin --profile desktop add link:E:/dsh-plugins/dsh-WE-library
+# ============================================================================
+
+- insert:
+    - id: we-library
+      name: dsh-we-library

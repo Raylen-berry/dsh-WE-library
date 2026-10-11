@@ -1,104 +1,48 @@
-# dsh-WE-library · WE 库桥
+# Wallpaper Engine 库桥
 
-把本机 **Wallpaper Engine** 的壁纸库接进 DSH：扫描订阅与本地项目、提供库清单与媒体流、
-场景静态合成，以及实时场景的控制面。
+把本机 **Wallpaper Engine** 的订阅壁纸与本地项目接入 DSH，为背景插件提供库清单、媒体文件和场景静态图。
 
-> **包名与目录名不一样是有意的**：npm 包名不允许大写字母，所以 `package.json` 里是
-> `dsh-we-library`，而目录 / GitHub 仓库是 `dsh-WE-library`。三处（包名、`cordis.patch.yml`
-> 的 `name`、profile 的依赖声明）必须用**小写包名**，写错宿主会报
-> `we-library (dsh-we-library): failed to import` 而根本挂不上。
+> **当前处于独立迁移阶段。** 本仓库提供后台接口和原生桥代码，尚未包含独立图库界面。安装后不会自动出现选壁纸页面或更换 DSH 背景；目前的图库和属性界面仍在底图插件中。
 
-## 它和底图插件是什么关系
+仓库名 `dsh-WE-library` · 安装包名 **`dsh-we-library`** · MIT 许可证
 
-两个插件**分立**，靠 HTTP 接口解耦，各自可独立安装：
+[安装](docs/安装.md) · [功能与用法](docs/使用.md) · [原生桥接入](docs/桥.md) · [文档导航](docs/README.md)
 
-| 插件 | 负责 |
-|---|---|
-| **dsh-WE-library**（本插件） | WE 库里有什么、场景怎么渲染、画面从哪来（库清单 / 媒体流 / 静态合成 / 实时控制面） |
-| **dsh-bg-atelier-plus**（底图插件） | 把画面当背景贴上去（底图绘制、主题染色、外观控件、切换动画） |
+## 可以做什么
 
-**路由前缀完全分开**：本插件默认 `/dwl/*`，底图插件是 `/bga/*`，两者不会抢同一段路由。
-前缀可由宿主传入（`registerWeRoutes(webServer, { prefix })`），默认 `/dwl`。
+| 能力 | 具体用途 | 当前条件 |
+| --- | --- | --- |
+| **发现本地壁纸库** | 读取 Steam 工坊订阅与 WE 本地项目，返回标题、类型、标签和预览信息 | 本机已安装 WE，项目已下载 |
+| **提供媒体文件** | 让接入方读取项目里的预览图、视频、网页等文件 | 通过库里的项目 ID 访问 |
+| **生成场景静态图** | 将可解析的 `scene.pkg` 合成为 WebP，供背景插件显示 | 需要可用的 `sharp`；属于静态近似 |
+| **发送到 WE** | 使用 WE 官方命令打开指定项目 | WE 需先运行；未运行时先打开 WE 界面 |
+| **接入实时场景** | 使用 WE 自己的引擎运行场景，由桌面原生桥连接消费方 | Windows、原生桥安装及客户端接入 |
 
-> 历史：这些代码原先长在底图插件里（`/bga/we/*`）。v0.1.0 移植出来独立维护，
-> 目的是让"依赖真正的 Wallpaper Engine"这条路能单独演进 —— 与
-> [dsh-wallpaper-engine](https://github.com/elysia395/dsh-wallpaper-engine)
-> 那条"把 WE 引擎自己装进 DSH"的路线平行，互不替代。
+## 它和底图插件怎么配合
 
-## 它支持什么
+| 插件 | 负责什么 |
+| --- | --- |
+| **本插件：库桥** | 找到壁纸、提供文件和场景画面相关能力 |
+| **dsh-bg-atelier-plus：底图插件** | 提供背景界面，把画面绘制到 DSH 中 |
 
-| 能力 | 说明 |
-|---|---|
-| **库发现** | 注册表 `HKCU\Software\Valve\Steam` 的 `SteamPath` → `libraryfolders.vdf` 里的多库 → 硬编码兜底清单。**盘符不写死**，换机器/换盘仍可用 |
-| **两类来源** | Steam 创意工坊订阅（appid `431960`）+ 本地项目（`projects/<项目>` 与 `projects/<组>/<项目>`） |
-| **库清单** | `/dwl/library.json`：按标题排序，带类型、标签、预览图、配色、静态图就绪状态 |
-| **媒体流** | `/dwl/media/<id>/<相对路径>`：只在已枚举的项目内提供，扩展名黑名单挡掉 `.pkg/.exe/...`，路径穿越被拒 |
-| **场景静态合成** | `/dwl/still/<id>.webp`：把 `scene.pkg` 合成成静态图（有界工作线程 + 超时 + 失败冷却） |
-| **官方 CLI 启动** | `/dwl/open-in-we`：`-control openWallpaper -file <project.json>`；WE 没运行时只打开界面，**不谎称已打开某张壁纸** |
-| **桥状态** | `/dwl/status`：WE 是否在跑、桥能力 |
+当前两个仓库还在拆分中：库桥使用 `/dwl/*` 接口，底图插件保留自己的 `/bga/we/*` 和现有界面。安装库桥不会自动把底图界面切换到新接口。原生实时桥的共享安装入口另见[接入指南](docs/桥.md)。
 
-## 安装
+## 第一次接触
 
-```powershell
-dsh plugin --profile desktop add link:E:/dsh-plugins/dsh-WE-library
-```
+1. 先读[功能与用法](docs/使用.md)，确认自己需要库接口，还是现有底图界面的背景功能。
+2. 按[安装说明](docs/安装.md)安装库桥，等正在执行的任务结束后，完全退出并重新打开 DSH Desktop。
+3. 用启动日志确认 `dsh-we-library` 已加载；需要接入时，再读取库清单和状态接口。
+4. 只有需要开发或迁移实时场景接入时，再阅读[原生桥](docs/桥.md)与[画面接口](docs/接口.md)。
 
-装完**完全退出并重新打开 DSH Desktop**（不是关窗口）。设置 → 插件里可开关。
+## 继续了解
 
-## 路径与派生图
+| 想了解什么 | 文档 |
+| --- | --- |
+| 安装、更新、找不到库 | [安装](docs/安装.md) |
+| 支持哪些壁纸，静态与实时有什么区别 | [使用](docs/使用.md) |
+| 原生桥如何接入、更新与回退 | [桥](docs/桥.md) |
+| 生成的图片和属性存在哪里 | [数据](docs/数据.md) |
+| 接口、源码入口与测试 | [接口](docs/接口.md) · [开发](docs/开发.md) |
+| 原来的迁移说明与验证记录 | [历史](docs/历史.md) |
 
-| 用途 | 落点 |
-|---|---|
-| 派生图（场景静态合成） | `$DSH_HOME/dsh-we-library/we-stills/` |
-| 显式指定 sharp | 环境变量 `DSH_WE_LIBRARY_SHARP` |
-| 显式指定本插件设置目录 | 环境变量 `DSH_WE_LIBRARY_DIR` |
-
-`sharp` 的查找顺序移植自底图插件（那份已经踩过 asar / junction / 裸 import 的坑）：
-显式指定 → 裸 `import('sharp')` → profile 树里的 `node_modules` → 宿主 asar 内的副本。
-**asar 内部路径不先探存在性** —— 普通 Node 的 `fs` 看不见 asar 内部，而 Electron 里能 import，先探反而会把正确候选筛掉。
-
-## 实时场景（原生桥）
-
-实时模式要跑 WE 自己的引擎，靠原生桥把 WE 专用窗口的画面接进 DSH：
-
-```powershell
-npm run native:build                                                   # 从源码构建辅助程序
-node tools/install-native-bridge.mjs --app 'D:\deepseek dsh\DSH Desktop'          # 预览改动
-node tools/install-native-bridge.mjs --app '...' --apply --backup '...'          # 写入并备份
-```
-
-安装器会往 DSH 的 `out/main/index.js` 与 `out/preload/index.cjs` 注入受保护的桥加载入口，
-并在 IPC 上用 **本插件自己的频道前缀 `dwl-live:*`**（与底图插件并存时不抢频道）。
-细节、权限范围与回退见 [`we/native/README.md`](we/native/README.md)。
-
-**原生桥需要 Windows。** 没有桥时实时模式退回静态图并显示原因，不会静默失败。
-
-## 验证
-
-```bash
-npm test                      # 语法门禁 6/6 + 套件 2/2
-node tools/run-all.mjs --list # 只看清单
-```
-
-| 套件 | 覆盖 |
-|---|---|
-| `tools/verify-we-library.mjs` | 22 项：前缀独立性（没有硬编码 `/bga/`、前缀可被换掉且每个端点都跟着换）、越界依赖、路径发现迁移性（盘符只出现在兜底清单里）、包名与 patch 的一致性、files 覆盖、裸依赖为零 |
-| `tools/verify-discovery-live.mjs` | 真跑一次库发现并与磁盘对账：把**真正**的发现逻辑接上，数 WE 目录里的可执行文件、订阅项目数、本地项目数，并核对白名单边界（库根外路径必须被拒）。本机没有 WE 时 SKIP 并退出 0 |
-
-反向证据（写这两套时真踩到的）：移植第一版里 `routes.js` 有 6 处硬编码 `/bga/we/...`，
-`verify-we-library` 的"前缀可被换掉"那组会在传 `/probe` 时直接打红 —— 这条不是理论检查，
-是当时真发生过的串台。
-
-## 未完成的迁移（下一步）
-
-本插件目前承接的是 **host 半**（库、媒体、静态合成、启动、桥）。**客户端半还没搬**：
-
-- 库浏览 UI 与场景属性面板仍在底图插件的 `client.js`（约第 2272–2773 行）；
-- 实时画面的消费（Electron 采集 → 当背景显示）也仍在底图插件，且与它的绘制状态耦合。
-
-按设计，两边靠一个**画面接口**解耦：本插件出画面（含实时流），底图插件只负责把它当背景贴上去。
-接口落地前，底图插件里原有的 WE 功能保持不动（**双份并存**，是刻意的过渡状态）。
-
-## 许可
-
-MIT。`we/native` 下的辅助程序从底图插件一并移植。
+许可见 [LICENSE](LICENSE)。
